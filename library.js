@@ -26,44 +26,8 @@
 	const passport = module.parent.require('passport');
 	const nconf = module.parent.require('nconf');
 	const winston = module.parent.require('winston');
-
-	/**
-	 * REMEMBER
-	 *   Never save your OAuth Key/Secret or OAuth2 ID/Secret pair in code! It could be published and leaked accidentally.
-	 *   Save it into your config.json file instead:
-	 *
-	 *   {
-	 *     ...
-	 *     "oauth": {
-	 *       "id": "someoauthid",
-	 *       "secret": "youroauthsecret"
-	 *     }
-	 *     ...
-	 *   }
-	 *
-	 *   ... or use environment variables instead:
-	 *
-	 *   `OAUTH__ID=someoauthid OAUTH__SECRET=youroauthsecret node app.js`
-	 */
-
-	const constants = Object.freeze({
-		type: '',	// Either 'oauth' or 'oauth2'
-		name: '',	// Something unique to your OAuth provider in lowercase, like "github", or "nodebb"
-		oauth: {
-			requestTokenURL: '',
-			accessTokenURL: '',
-			userAuthorizationURL: '',
-			consumerKey: nconf.get('oauth:key'),	// don't change this line
-			consumerSecret: nconf.get('oauth:secret'),	// don't change this line
-		},
-		oauth2: {
-			authorizationURL: '',
-			tokenURL: '',
-			clientID: nconf.get('oauth:id'),	// don't change this line
-			clientSecret: nconf.get('oauth:secret'),	// don't change this line
-		},
-		userRoute: '',	// This is the address to your app's "user profile" API endpoint (expects JSON)
-	});
+	const ssoConfig = module.parent.require('../sso-config');
+	const constants = Object.freeze(ssoConfig.constants);
 
 	const OAuth = {};
 	let configOk = false;
@@ -114,22 +78,12 @@
 				opts.callbackURL = nconf.get('url') + '/auth/' + constants.name + '/callback';
 
 				passportOAuth.Strategy.prototype.userProfile = function (accessToken, done) {
-					this._oauth2.get(constants.userRoute, accessToken, function (err, body/* , res */) {
-						if (err) {
-							return done(err);
-						}
+					const uid = OAuth.getUidFromToken(accessToken);
+					OAuth.parseUserReturn(json, function (err, profile) {
+						if (err) return done(err);
+						profile.provider = constants.name;
 
-						try {
-							var json = JSON.parse(body);
-							OAuth.parseUserReturn(json, function (err, profile) {
-								if (err) return done(err);
-								profile.provider = constants.name;
-
-								done(null, profile);
-							});
-						} catch (e) {
-							done(e);
-						}
+						done(null, profile);
 					});
 				};
 			}
@@ -166,6 +120,13 @@
 		}
 	};
 
+	OAuth.getUidFromToken = function(token) {
+			const parts = token.split('.');
+			const buffer = Buffer.from(parts[1], 'base64');
+			const data = JSON.parse(buffer);
+			return data['sub'];
+	}
+
 	OAuth.parseUserReturn = function (data, callback) {
 		// Alter this section to include whatever data is necessary
 		// NodeBB *requires* the following: id, displayName, emails.
@@ -173,9 +134,12 @@
 
 		// Find out what is available by uncommenting this line:
 		// console.log(data);
+		const parts = data.split('.');
+		const buffer = Buffer.from(parts[1], 'base64');
+		data = JSON.parse(buffer);
 
 		var profile = {};
-		profile.id = data.id;
+		profile.id = data.sub;
 		profile.displayName = data.name;
 		profile.emails = [{ value: data.email }];
 
@@ -183,8 +147,8 @@
 		// profile.isAdmin = data.isAdmin ? true : false;
 
 		// Delete or comment out the next TWO (2) lines when you are ready to proceed
-		process.stdout.write('===\nAt this point, you\'ll need to customise the above section to id, displayName, and emails into the "profile" object.\n===');
-		return callback(new Error('Congrats! So far so good -- please see server log for details'));
+		//process.stdout.write('===\nAt this point, you\'ll need to customise the above section to id, displayName, and emails into the "profile" object.\n===');
+		//return callback(new Error('Congrats! So far so good -- please see server log for details'));
 
 		// eslint-disable-next-line
 		callback(null, profile);
