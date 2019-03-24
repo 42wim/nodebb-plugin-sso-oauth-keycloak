@@ -79,7 +79,7 @@
 
 				passportOAuth.Strategy.prototype.userProfile = function (accessToken, done) {
 					const uid = OAuth.getUidFromToken(accessToken);
-					OAuth.parseUserReturn(json, function (err, profile) {
+					OAuth.parseUserReturn(accesToken, function (err, profile) {
 						if (err) return done(err);
 						profile.provider = constants.name;
 
